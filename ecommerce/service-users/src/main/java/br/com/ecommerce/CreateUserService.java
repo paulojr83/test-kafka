@@ -1,67 +1,65 @@
 package br.com.ecommerce;
 
+import br.com.ecommerce.consumer.ConsumerService;
+import br.com.ecommerce.consumer.ServiceRunner;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.sql.*;
-import java.util.HashMap;
 import java.util.UUID;
 
-public class CreateUserService {
+public class CreateUserService implements ConsumerService<Order> {
 
-    private final Connection connection;
+    private final LocalDatabase database;
 
     public CreateUserService() throws SQLException {
-        String url = "jdbc:sqlite:users_database.db";
-        this.connection = DriverManager.getConnection(url);
-        try {
-            this.connection.createStatement().execute("create table Users (" +
-                    " uuid varchar(200) primary key," +
-                    " email varchar(200))");
-        }catch (SQLException ex) {
-            // be careful, the sql could be wrong, be really careful
-            ex.printStackTrace();
-        }
+        this.database = new LocalDatabase("users_database");
+        database.createIfNotExists("create table Users (" +
+                " uuid varchar(200) primary key," +
+                " email varchar(200))");
 
     }
 
-    public static void main(String[] args) throws SQLException {
-
-        var createUserService = new CreateUserService();
-        try(var service = new KafkaService(
-                CreateUserService.class.getSimpleName(),
-                "ECOMMERCE_NEW_ORDER", createUserService::parse,
-                new HashMap<String, String>())){
-            service.run();
-        }
+    public static void main(String[] args) {
+        new ServiceRunner<>(CreateUserService::new).start(1);
     }
 
-    private void parse(ConsumerRecord<String, Order> record) throws SQLException {
+    @Override
+    public String getTopic() {
+        return "ECOMMERCE_NEW_ORDER";
+    }
+
+    @Override
+    public String getConsumerGroup() {
+        return CreateUserService.class.getSimpleName();
+    }
+    public void parse(ConsumerRecord<String, Message<Order>> record)  {
         System.out.println("------------------------------------------------");
         System.out.println("Processing new order, checking for new user");
         System.out.println(record.key());
         System.out.println(record.value());
-        var order = record.value();
-        if( !isNewUser(order.getEmail()) ){
-            insertNewUser(order.getEmail());
+
+        Message<Order> message = record.value();
+        var order = message.getPayload();
+        try {
+            if( !isNewUser(order.getEmail()) ){
+                insertNewUser(order.getEmail());
+            }
+        } catch (SQLException throwables) {
+            throwables.printStackTrace();
         }
     }
 
     private void insertNewUser(String email) throws SQLException {
-        var insert = this.connection.prepareStatement("insert into Users ( uuid, email ) " +
-                " values (?, ? )");
         var uuid =  UUID.randomUUID().toString();
-        insert.setString(1, uuid);
-        insert.setString(2, email);
-        insert.execute();
+        this.database.update("insert into Users ( uuid, email ) " +
+                " values (?, ? )", uuid, email);
+
         System.out.println("User created id "+ uuid + " E-mail " + email);
     }
 
     private boolean isNewUser(String email) throws SQLException {
-        var existsUser=
-                this.connection.prepareStatement("select uuid from users where email = ? limit 1");
-        existsUser.setString(1, email);
-        ResultSet resultSet = existsUser.executeQuery();
-        return resultSet.next();
+        var existsUser= this.database.query("select uuid from users where email = ? limit 1", email);
+        return existsUser.next();
     }
 
 }

@@ -1,5 +1,7 @@
 package br.com.ecommerce;
 
+import br.com.ecommerce.consumer.KafkaService;
+import br.com.ecommerce.dispatcher.KafkaDispatcher;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.sql.Connection;
@@ -29,7 +31,7 @@ public class BatchSendMessageService {
 
     }
 
-    public static void main(String[] args) throws SQLException {
+    public static void main(String[] args) throws ExecutionException, InterruptedException, SQLException {
 
         var batchSendMessageService = new BatchSendMessageService();
         try(var service = new KafkaService(
@@ -48,11 +50,13 @@ public class BatchSendMessageService {
         for (User user : getAllUsers()) {
             System.out.println(topic);
             System.out.println(user.toString());
-            userDispatcher.send(
+            userDispatcher.sendAsync(
                     topic,
                     user.getUuid(),
                     message.getId().continueWith(BatchSendMessageService.class.getSimpleName()),
                     user);
+
+            //esta garantido a entrega da mensagem
         }
     }
 

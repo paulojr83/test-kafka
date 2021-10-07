@@ -9,21 +9,16 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>service-users</artifactId>
-
+    <artifactId>service-email-new-order</artifactId>
     <dependencies>
         <dependency>
             <groupId>br.com.ecommerce</groupId>
             <artifactId>common-kafka</artifactId>
             <version>1.0-SNAPSHOT</version>
-        </dependency>
-        <dependency>
-            <groupId>br.com.ecommerce</groupId>
-            <artifactId>common-database</artifactId>
-            <version>1.0-SNAPSHOT</version>
             <scope>compile</scope>
         </dependency>
     </dependencies>
+
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>

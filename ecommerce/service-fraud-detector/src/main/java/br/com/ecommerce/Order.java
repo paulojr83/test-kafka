@@ -20,6 +20,10 @@ public class Order {
         return this.email;
     }
 
+    public String getOrderId() {
+        return orderId;
+    }
+
     @Override
     public String toString() {
         return "Order{" +

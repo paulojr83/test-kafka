@@ -1,5 +1,8 @@
-package br.com.ecommerce;
+package br.com.ecommerce.consumer;
 
+import br.com.ecommerce.Message;
+import br.com.ecommerce.dispatcher.GsonSerializer;
+import br.com.ecommerce.dispatcher.KafkaDispatcher;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -10,12 +13,14 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.regex.Pattern;
 
 public class KafkaService<T> implements Closeable {
 
     private final KafkaConsumer<String, Message<T>> consumer;
     private final ConsumerFunction<T> parse;
+
     //private final Class<T> clazz;
 
     private KafkaService(ConsumerFunction<T> parse, String groupId, Map<String, String> properties) {
@@ -33,22 +38,31 @@ public class KafkaService<T> implements Closeable {
         consumer.subscribe(pattern);
     }
 
-    public void run() {
-        while (true) {
-            var records = consumer.poll(Duration.ofMillis(100));
-            if( !records.isEmpty()) {
-                System.out.println("Encontrei " + records.count() +" registros");
-                for (var record: records) {
-                    try {
-                        parse.consume(record);
-                    } catch (Exception e) {
-                        // only catches Exception because no matter which Exception I want to recover and parse the next one
-                        // so far, just logging the exception for this message
-                        e.printStackTrace();
+    public void run() throws ExecutionException, InterruptedException {
+        try(var deadLetter = new KafkaDispatcher<>()) {
+            while (true) {
+                var records = consumer.poll(Duration.ofMillis(100));
+                if( !records.isEmpty()) {
+                    System.out.println("Encontrei " + records.count() +" registros");
+                    for (var record: records) {
+                        try {
+                            parse.consume(record);
+                        } catch (Exception e) {
+                            // only catches Exception because no matter which Exception I want to recover and parse the next one
+                            // so far, just logging the exception for this message
+                            e.printStackTrace();
+                            var  message = record.value();
+                            deadLetter.send(
+                                    "ECOMMERCE_DEADLETTER",
+                                    message.getId().toString(),
+                                    message.getId().continueWith("DeadLetter"),
+                                    new GsonSerializer().serialize("", message));
+                        }
                     }
                 }
             }
         }
+
     }
 
     private Properties getProperties(String groupId, Map<String, String> overrideProperties){
@@ -58,7 +72,11 @@ public class KafkaService<T> implements Closeable {
         properties.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, GsonDeserializer.class.getName());
         properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         properties.setProperty(ConsumerConfig.CLIENT_ID_CONFIG, UUID.randomUUID().toString());
+        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "1");
+        properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        //properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
         //properties.setProperty(GsonDeserializer.CLAZZ_CONFIG, clazz.getName());
+        //properties.setProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
         properties.putAll(overrideProperties);
 
         return properties;
